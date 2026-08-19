@@ -16,7 +16,12 @@ export function Header() {
             </svg>
           </div>
           <div>
-            <h1 className="text-lg font-bold leading-none text-ink">ניהול חשבוניות</h1>
+            <h1 className="flex items-center gap-2 text-lg font-bold leading-none text-ink">
+              ניהול חשבוניות
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                v0.3.0
+              </span>
+            </h1>
             <p className="mt-1 text-xs text-slate-500">ריכוז החשבוניות שלך במקום אחד</p>
           </div>
         </div>

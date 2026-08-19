@@ -122,7 +122,7 @@ export default function App() {
       </main>
 
       <footer className="mx-auto max-w-5xl px-4 pb-8 pt-2 text-center text-xs text-slate-400 sm:px-6">
-        גרסה ראשונית · נתוני דמה + Gmail (טיוטות לבדיקה)
+        נתוני דמה + Gmail (טיוטות לבדיקה)
       </footer>
     </div>
   );
