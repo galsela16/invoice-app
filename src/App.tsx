@@ -10,15 +10,23 @@ import {
   type Filters as FiltersState,
 } from './lib/selectors';
 import { monthLabel } from './utils/format';
+import * as gmail from './lib/gmail';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
 import { Filters } from './components/Filters';
 import { InvoiceList } from './components/InvoiceList';
+import { GmailConnect } from './components/GmailConnect';
 
 export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
+
+  // מצב Gmail
+  const [gmailInvoices, setGmailInvoices] = useState<Invoice[]>([]);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [gmailError, setGmailError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -33,10 +41,49 @@ export default function App() {
     };
   }, []);
 
-  const months = useMemo(() => availableMonths(invoices), [invoices]);
+  async function loadFromGmail() {
+    setGmailLoading(true);
+    setGmailError(null);
+    try {
+      const emails = await gmail.fetchInvoiceEmails();
+      setGmailInvoices(emails);
+      setGmailConnected(true);
+    } catch (err) {
+      setGmailError(err instanceof Error ? err.message : 'שגיאה במשיכת המיילים.');
+    } finally {
+      setGmailLoading(false);
+    }
+  }
+
+  function handleConnect() {
+    setGmailLoading(true);
+    setGmailError(null);
+    gmail.connect(
+      () => loadFromGmail(),
+      (msg) => {
+        setGmailError(msg);
+        setGmailLoading(false);
+      }
+    );
+  }
+
+  function handleDisconnect() {
+    gmail.disconnect();
+    setGmailInvoices([]);
+    setGmailConnected(false);
+    setGmailError(null);
+  }
+
+  // חשבוניות מ-Gmail מוצגות ראשונות, ואז נתוני הדמה
+  const allInvoices = useMemo(
+    () => [...gmailInvoices, ...invoices],
+    [gmailInvoices, invoices]
+  );
+
+  const months = useMemo(() => availableMonths(allInvoices), [allInvoices]);
   const filtered = useMemo(
-    () => sortByDateDesc(filterInvoices(invoices, filters)),
-    [invoices, filters]
+    () => sortByDateDesc(filterInvoices(allInvoices, filters)),
+    [allInvoices, filters]
   );
   const summary = useMemo(() => summarize(filtered), [filtered]);
 
@@ -52,6 +99,16 @@ export default function App() {
         ) : (
           <>
             <SummaryPanel summary={summary} periodLabel={periodLabel} />
+            <GmailConnect
+              configured={gmail.isConfigured()}
+              connected={gmailConnected}
+              loading={gmailLoading}
+              count={gmailConnected ? gmailInvoices.length : null}
+              error={gmailError}
+              onConnect={handleConnect}
+              onRefresh={loadFromGmail}
+              onDisconnect={handleDisconnect}
+            />
             <Filters
               filters={filters}
               months={months}
@@ -64,7 +121,7 @@ export default function App() {
       </main>
 
       <footer className="mx-auto max-w-5xl px-4 pb-8 pt-2 text-center text-xs text-slate-400 sm:px-6">
-        גרסה ראשונית · נתוני דמה
+        גרסה ראשונית · נתוני דמה + Gmail (טיוטות לבדיקה)
       </footer>
     </div>
   );
