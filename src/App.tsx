@@ -22,7 +22,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
 
-  // מצב Gmail
   const [gmailInvoices, setGmailInvoices] = useState<Invoice[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
@@ -63,7 +62,8 @@ export default function App() {
       (msg) => {
         setGmailError(msg);
         setGmailLoading(false);
-      }
+      },
+      () => setGmailLoading(false)
     );
   }
 
@@ -74,7 +74,6 @@ export default function App() {
     setGmailError(null);
   }
 
-  // חשבוניות מ-Gmail מוצגות ראשונות, ואז נתוני הדמה
   const allInvoices = useMemo(
     () => [...gmailInvoices, ...invoices],
     [gmailInvoices, invoices]
@@ -92,7 +91,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface">
       <Header />
-
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         {loading ? (
           <LoadingState />
@@ -119,7 +117,6 @@ export default function App() {
           </>
         )}
       </main>
-
       <footer className="mx-auto max-w-5xl px-4 pb-8 pt-2 text-center text-xs text-slate-400 sm:px-6">
         גרסה ראשונית · נתוני דמה + Gmail (טיוטות לבדיקה)
       </footer>
