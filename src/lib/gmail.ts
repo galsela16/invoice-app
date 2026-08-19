@@ -1,4 +1,4 @@
-import type { Invoice } from '../types';
+import type { Invoice, InvoiceAttachment } from '../types';
 
 // ── חיבור Gmail (קריאה בלבד) — שיטת הפניה מלאה (redirect) ─────────
 // במקום חלון קופץ (שנחסם ע"י COOP בחלק מהדפדפנים), האתר עצמו עובר
@@ -112,10 +112,16 @@ interface GmailHeader {
   name: string;
   value: string;
 }
+interface GmailPart {
+  filename?: string;
+  mimeType?: string;
+  body?: { attachmentId?: string; size?: number };
+  parts?: GmailPart[];
+}
 interface GmailMessage {
   id: string;
   snippet?: string;
-  payload?: { headers?: GmailHeader[] };
+  payload?: { headers?: GmailHeader[]; parts?: GmailPart[]; filename?: string; mimeType?: string; body?: { attachmentId?: string } };
 }
 
 /** מושך מיילים שנראים כמו חשבוניות וממיר אותם ל"טיוטות" חשבונית. */
@@ -126,19 +132,52 @@ export async function fetchInvoiceEmails(): Promise<Invoice[]> {
   const ids = (list.messages ?? []).map((m) => m.id);
 
   const messages = await Promise.all(
-    ids.map((id) =>
-      gmailFetch<GmailMessage>(
-        `messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
-      )
-    )
+    ids.map((id) => gmailFetch<GmailMessage>(`messages/${id}?format=full`))
   );
 
   return messages.map(toInvoice);
 }
 
+/** מוריד את התוכן הבינארי של קובץ מצורף מ-Gmail. */
+export async function downloadAttachment(
+  messageId: string,
+  attachmentId: string
+): Promise<Uint8Array> {
+  const res = await gmailFetch<{ data?: string }>(
+    `messages/${messageId}/attachments/${attachmentId}`
+  );
+  return base64UrlToBytes(res.data ?? '');
+}
+
+function base64UrlToBytes(b64url: string): Uint8Array {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '==='.slice((b64.length + 3) % 4);
+  const bin = atob(padded);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 // ── פענוח גס (יוחלף/ישודרג בצעד ה-PDF/OCR) ─────────────────────
 function headerValue(headers: GmailHeader[] | undefined, name: string): string {
   return headers?.find((h) => h.name === name)?.value ?? '';
+}
+
+/** אוסף רקורסיבית קבצים מצורפים מסוג PDF/תמונה. */
+function collectAttachments(messageId: string, part: GmailPart | undefined, out: InvoiceAttachment[]): void {
+  if (!part) return;
+  const mime = part.mimeType ?? '';
+  const isFile = Boolean(part.filename) && Boolean(part.body?.attachmentId);
+  const isPdfOrImage = mime === 'application/pdf' || mime.startsWith('image/') || /\.(pdf|png|jpe?g|webp|gif|heic)$/i.test(part.filename ?? '');
+  if (isFile && isPdfOrImage) {
+    out.push({
+      messageId,
+      attachmentId: part.body!.attachmentId!,
+      filename: part.filename!,
+      mimeType: mime || 'application/octet-stream',
+    });
+  }
+  if (part.parts) for (const p of part.parts) collectAttachments(messageId, p, out);
 }
 
 function parseVendor(from: string): string {
@@ -170,6 +209,11 @@ function toInvoice(msg: GmailMessage): Invoice {
   const from = headerValue(headers, 'From');
   const subject = headerValue(headers, 'Subject');
   const snippet = msg.snippet ?? '';
+
+  const attachments: InvoiceAttachment[] = [];
+  // payload עצמו יכול להיות קובץ, וגם החלקים הפנימיים
+  collectAttachments(msg.id, msg.payload as GmailPart, attachments);
+
   return {
     id: `gmail-${msg.id}`,
     vendor: parseVendor(from) || subject || 'ללא שם',
@@ -179,5 +223,6 @@ function toInvoice(msg: GmailMessage): Invoice {
     source: 'gmail',
     category: 'מ-Gmail',
     note: subject,
+    attachments,
   };
 }

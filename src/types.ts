@@ -6,6 +6,13 @@ export type InvoiceStatus = 'paid' | 'unpaid' | 'review';
 
 export type InvoiceSource = 'gmail' | 'whatsapp' | 'manual';
 
+export interface InvoiceAttachment {
+  messageId: string;
+  attachmentId: string;
+  filename: string;
+  mimeType: string;
+}
+
 export interface Invoice {
   id: string;
   vendor: string; // שם הספק / העסק
@@ -16,6 +23,7 @@ export interface Invoice {
   category?: string; // קטגוריה (רשות)
   note?: string; // הערה חופשית (רשות)
   fileUrl?: string; // קישור לקובץ המקורי — יתמלא בהמשך בהעלאה/OCR
+  attachments?: InvoiceAttachment[]; // קבצים מצורפים מ-Gmail (PDF/תמונות)
 }
 
 // ── Summary ───────────────────────────────────────────────────

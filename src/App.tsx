@@ -11,6 +11,7 @@ import {
 } from './lib/selectors';
 import { monthLabel } from './utils/format';
 import * as gmail from './lib/gmail';
+import { exportInvoicesZip, countAttachments, type ExportProgress } from './lib/exportZip';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
 import { Filters } from './components/Filters';
@@ -26,6 +27,23 @@ export default function App() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
   const [gmailError, setGmailError] = useState<string | null>(null);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+
+  async function handleExport() {
+    setExporting(true);
+    setExportProgress({ done: 0, total: countAttachments(gmailInvoices) });
+    setGmailError(null);
+    try {
+      await exportInvoicesZip(gmailInvoices, (p) => setExportProgress(p));
+    } catch (err) {
+      setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא.');
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  }
 
   // טעינת מקור הנתונים המקומי (כרגע ריק — בלי דמה)
   useEffect(() => {
@@ -111,9 +129,13 @@ export default function App() {
               loading={gmailLoading}
               count={gmailConnected ? gmailInvoices.length : null}
               error={gmailError}
+              attachmentCount={countAttachments(gmailInvoices)}
+              exporting={exporting}
+              exportProgress={exportProgress}
               onConnect={handleConnect}
               onRefresh={loadFromGmail}
               onDisconnect={handleDisconnect}
+              onExport={handleExport}
             />
             <Filters
               filters={filters}

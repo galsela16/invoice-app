@@ -4,9 +4,13 @@ interface Props {
   loading: boolean;
   count: number | null;
   error: string | null;
+  attachmentCount: number;
+  exporting: boolean;
+  exportProgress: { done: number; total: number } | null;
   onConnect: () => void;
   onRefresh: () => void;
   onDisconnect: () => void;
+  onExport: () => void;
 }
 
 export function GmailConnect({
@@ -15,9 +19,13 @@ export function GmailConnect({
   loading,
   count,
   error,
+  attachmentCount,
+  exporting,
+  exportProgress,
   onConnect,
   onRefresh,
   onDisconnect,
+  onExport,
 }: Props) {
   // עדיין לא הוגדר Client ID
   if (!configured) {
@@ -44,25 +52,34 @@ export function GmailConnect({
               {connected
                 ? count === null
                   ? 'מחובר'
-                  : `נמשכו ${count} חשבוניות אפשריות`
+                  : `נמשכו ${count} חשבוניות · ${attachmentCount} קבצים מצורפים`
                 : 'קריאה בלבד — למשיכת חשבוניות מהמייל'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {connected ? (
             <>
               <button
+                onClick={onExport}
+                disabled={exporting || loading || attachmentCount === 0}
+                title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : undefined}
+                className="rounded-lg bg-ink px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                {exporting ? 'מייצא…' : 'ייצוא לרואה חשבון'}
+              </button>
+              <button
                 onClick={onRefresh}
-                disabled={loading}
+                disabled={loading || exporting}
                 className="rounded-lg bg-brand px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:opacity-60"
               >
                 {loading ? 'מרענן…' : 'רענון'}
               </button>
               <button
                 onClick={onDisconnect}
-                className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                disabled={exporting}
+                className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
               >
                 ניתוק
               </button>
@@ -78,6 +95,25 @@ export function GmailConnect({
           )}
         </div>
       </div>
+
+      {exporting && exportProgress && (
+        <div className="mt-3">
+          <div className="mb-1 flex justify-between text-xs text-slate-500">
+            <span>מוריד קבצים ואורז ZIP…</span>
+            <span className="nums">
+              {exportProgress.done}/{exportProgress.total}
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full bg-brand transition-all"
+              style={{
+                width: `${exportProgress.total ? (exportProgress.done / exportProgress.total) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
