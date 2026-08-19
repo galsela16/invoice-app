@@ -27,10 +27,11 @@ export function isConnected(): boolean {
   return Boolean(accessToken);
 }
 
-function ensureTokenClient(
-  onToken: () => void,
-  onError: (msg: string) => void
-): GoogleTokenClient {
+let cbOnToken: () => void = () => {};
+let cbOnError: (msg: string) => void = () => {};
+let cbOnDismiss: () => void = () => {};
+
+function ensureTokenClient(): GoogleTokenClient {
   if (!window.google) {
     throw new Error('ספריית Google עדיין נטענת. נסו שוב בעוד רגע.');
   }
@@ -40,21 +41,39 @@ function ensureTokenClient(
       scope: SCOPE,
       callback: (resp) => {
         if (resp.error) {
-          onError('ההתחברות ל-Gmail בוטלה או נכשלה.');
+          cbOnError('ההתחברות ל-Gmail נכשלה.');
           return;
         }
         accessToken = resp.access_token;
-        onToken();
+        cbOnToken();
       },
-      error_callback: () => onError('ההתחברות ל-Gmail בוטלה או נכשלה.'),
+      // חלק מהדפדפנים חוסמים בדיקת סגירת חלון (COOP) ומדווחים בטעות
+      // "popup_closed" גם כשההתחברות הצליחה. מתעלמים מזה — אם באמת
+      // התקבלה הרשאה, ה-callback למעלה כבר טיפל בה.
+      error_callback: (err: unknown) => {
+        const type = (err as { type?: string })?.type;
+        if (type === 'popup_failed_to_open') {
+          cbOnError('הדפדפן חסם את חלון ההתחברות. אפשרו חלונות קופצים ונסו שוב.');
+        } else {
+          // popup_closed / unknown — לרוב אזעקת שווא. פשוט מפסיקים טעינה.
+          cbOnDismiss();
+        }
+      },
     });
   }
   return tokenClient;
 }
 
 /** פותח את חלון ההרשאה של Google. */
-export function connect(onToken: () => void, onError: (msg: string) => void): void {
-  const client = ensureTokenClient(onToken, onError);
+export function connect(
+  onToken: () => void,
+  onError: (msg: string) => void,
+  onDismiss: () => void
+): void {
+  cbOnToken = onToken;
+  cbOnError = onError;
+  cbOnDismiss = onDismiss;
+  const client = ensureTokenClient();
   client.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
 }
 
