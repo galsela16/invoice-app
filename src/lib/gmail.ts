@@ -135,7 +135,29 @@ export async function fetchInvoiceEmails(): Promise<Invoice[]> {
     ids.map((id) => gmailFetch<GmailMessage>(`messages/${id}?format=full`))
   );
 
-  return messages.map(toInvoice);
+  const invoices = messages.map(toInvoice);
+  await enrichAmountsFromPdf(invoices);
+  return invoices;
+}
+
+/** מחלץ סכום אמיתי מקובץ ה-PDF המצורף (אם יש), ומעדכן את inv.amount. */
+async function enrichAmountsFromPdf(invoices: Invoice[]): Promise<void> {
+  await Promise.all(
+    invoices.map(async (inv) => {
+      const pdf = inv.attachments?.find(
+        (a) => a.mimeType === 'application/pdf' || /\.pdf$/i.test(a.filename)
+      );
+      if (!pdf) return;
+      try {
+        const { amountFromPdf } = await import('./pdfAmount');
+        const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
+        const res = await amountFromPdf(bytes);
+        if (res.amount !== null && res.amount > 0) inv.amount = res.amount;
+      } catch {
+        // נשארים עם הניחוש מהנושא אם החילוץ נכשל
+      }
+    })
+  );
 }
 
 /** מוריד את התוכן הבינארי של קובץ מצורף מ-Gmail. */
