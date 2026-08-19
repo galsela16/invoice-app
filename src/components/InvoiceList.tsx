@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Invoice } from '../types';
-import { formatCurrency, formatDate } from '../utils/format';
+import { formatCurrency, formatCurrencyCode, formatDate } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
 import { SourceBadge } from './SourceBadge';
 import { InvoiceModal } from './InvoiceModal';
@@ -67,6 +67,11 @@ export function InvoiceList({ invoices }: Props) {
               </div>
               <div className="nums text-base font-bold text-ink sm:col-span-2 sm:text-left">
                 {formatCurrency(inv.amount)}
+                {inv.currency && inv.currency !== 'ILS' && inv.originalAmount != null && (
+                  <span className="mt-0.5 block text-xs font-normal text-slate-400">
+                    {formatCurrencyCode(inv.originalAmount, inv.currency)}
+                  </span>
+                )}
               </div>
               <div className="sm:col-span-1 sm:text-left">
                 <StatusBadge status={inv.status} />

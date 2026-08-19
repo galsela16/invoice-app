@@ -22,6 +22,9 @@ export interface Invoice {
   source: InvoiceSource;
   category?: string; // קטגוריה (רשות)
   note?: string; // הערה חופשית (רשות)
+  currency?: string; // מטבע מקורי (ISO) אם שונה מ-ILS, למשל 'EUR'
+  originalAmount?: number; // הסכום במטבע המקורי, לפני המרה לשקל
+  fxRate?: number; // שער ההמרה לשקל שנעשה בו שימוש
   fileUrl?: string; // קישור לקובץ המקורי — יתמלא בהמשך בהעלאה/OCR
   attachments?: InvoiceAttachment[]; // קבצים מצורפים מ-Gmail (PDF/תמונות)
 }

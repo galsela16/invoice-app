@@ -12,6 +12,20 @@ export function formatCurrency(amount: number): string {
   return currencyFormatter.format(amount);
 }
 
+/** פורמט סכום במטבע לפי קוד ISO: formatCurrencyCode(16, 'EUR') → "€16.00" */
+export function formatCurrencyCode(amount: number, code: string): string {
+  try {
+    return new Intl.NumberFormat('he-IL', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount} ${code}`;
+  }
+}
+
 /** 08/07/2025 */
 export function formatDate(iso: string): string {
   const d = new Date(iso);

@@ -5,8 +5,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export interface AmountResult {
   amount: number | null;
+  currency: string | null; // ISO של המטבע שזוהה (EUR/USD/ILS...), או null אם לא זוהה סימן
   confidence: 'high' | 'low' | 'none';
-  raw: string; // הטקסט שנתפס, לניפוי באגים
+  raw: string;
 }
 
 /** מחלץ את כל הטקסט מ־PDF שמגיע כ־ArrayBuffer/Uint8Array */
@@ -23,8 +24,6 @@ export async function extractPdfText(data: ArrayBuffer | Uint8Array): Promise<st
 }
 
 // ── פענוח מספר לפי פורמט (תומך גם באירופאי: 16,00 / 1.234,56) ──
-// הכלל: אם יש גם נקודה וגם פסיק — האחרון מביניהם הוא העשרוני.
-// אם יש רק אחד מהם עם 1–2 ספרות אחריו — הוא העשרוני; אחרת מפריד אלפים.
 function parseMoney(token: string): number | null {
   const t = token.trim();
   const lc = t.lastIndexOf(',');
@@ -33,7 +32,6 @@ function parseMoney(token: string): number | null {
   if (lc > -1 && ld > -1) dec = lc > ld ? ',' : '.';
   else if (lc > -1) dec = t.length - lc - 1 <= 2 ? ',' : null;
   else if (ld > -1) dec = t.length - ld - 1 <= 2 ? '.' : null;
-
   let intPart: string;
   let frac = '';
   if (dec) {
@@ -47,10 +45,20 @@ function parseMoney(token: string): number | null {
   return isNaN(n) ? null : n;
 }
 
-const AMT = String.raw`\d[\d.,\u00a0]*\d|\d`; // מספר: ספרות עם מפרידים אפשריים
-const CUR = String.raw`₪|€|\$|EUR|ILS|NIS|USD|ש"?ח|שקל`; // סימני מטבע
+// ממפה סימן/קוד מטבע ל-ISO
+function markerToIso(marker: string | undefined): string | null {
+  if (!marker) return null;
+  const s = marker.replace(/["\u05f4\s]/g, '').toUpperCase();
+  if (['₪', 'ILS', 'NIS', 'שח', 'שקל'].includes(s)) return 'ILS';
+  if (['€', 'EUR'].includes(s)) return 'EUR';
+  if (['$', 'USD'].includes(s)) return 'USD';
+  if (['£', 'GBP'].includes(s)) return 'GBP';
+  return null;
+}
 
-// מילות מפתח לסכום הכולל, מהחזק לחלש. \b מונע התאמה בתוך מילה (Subtotal).
+const AMT = String.raw`\d[\d.,\u00a0]*\d|\d`;
+const CUR = String.raw`₪|€|\$|£|EUR|ILS|NIS|USD|GBP|ש"?ח|שקל`;
+
 const KEYWORDS = [
   String.raw`סה["\u05f4]?כ\s*לתשלום`,
   String.raw`סך\s*הכל\s*לתשלום`,
@@ -66,46 +74,47 @@ const KEYWORDS = [
 export function parseAmount(text: string): AmountResult {
   const t = text.replace(/[\u200e\u200f\u202a-\u202e]/g, '').replace(/\s+/g, ' ');
 
-  // 1) מילת מפתח + סכום שצמוד למטבע (הכי אמין)
+  // 1) מילת מפתח + סכום שצמוד למטבע (הכי אמין, כולל זיהוי מטבע)
   for (const k of KEYWORDS) {
     const re = new RegExp(
-      k + `[^0-9]{0,15}(?:(?:${CUR})\\s*(${AMT})|(${AMT})\\s*(?:${CUR}))`,
+      k + `[^0-9]{0,15}(?:(${CUR})\\s*(${AMT})|(${AMT})\\s*(${CUR}))`,
       'i'
     );
     const m = t.match(re);
     if (m) {
-      const v = parseMoney(m[1] ?? m[2]);
-      if (v !== null && v > 0) return { amount: v, confidence: 'high', raw: m[0] };
+      const v = parseMoney(m[2] ?? m[3]);
+      const cur = markerToIso(m[1] ?? m[4]);
+      if (v !== null && v > 0) return { amount: v, currency: cur, confidence: 'high', raw: m[0] };
     }
   }
-  // 2) מילת מפתח + מספר סמוך (בלי דרישת מטבע)
+  // 2) מילת מפתח + מספר סמוך (בלי מטבע → נניח ILS בהמשך)
   for (const k of KEYWORDS) {
     const re = new RegExp(k + `[^0-9]{0,15}(${AMT})`, 'i');
     const m = t.match(re);
     if (m) {
       const v = parseMoney(m[1]);
-      if (v !== null && v > 0) return { amount: v, confidence: 'high', raw: m[0] };
+      if (v !== null && v > 0) return { amount: v, currency: null, confidence: 'high', raw: m[0] };
     }
   }
-  // 3) כל הסכומים שצמודים למטבע — ניקח את הגדול (בד"כ זה הסה"כ)
-  const cands: number[] = [];
-  for (const re of [
-    new RegExp(`(?:${CUR})\\s*(${AMT})`, 'gi'),
-    new RegExp(`(${AMT})\\s*(?:${CUR})`, 'gi'),
-  ]) {
-    for (const m of t.matchAll(re)) {
-      const v = parseMoney(m[1]);
-      if (v !== null && v > 0) cands.push(v);
-    }
+  // 3) כל הסכומים שצמודים למטבע — ניקח את הגדול (בד"כ הסה"כ), עם המטבע שלו
+  const cands: { v: number; cur: string | null }[] = [];
+  for (const m of t.matchAll(new RegExp(`(${CUR})\\s*(${AMT})`, 'gi'))) {
+    const v = parseMoney(m[2]);
+    if (v !== null && v > 0) cands.push({ v, cur: markerToIso(m[1]) });
+  }
+  for (const m of t.matchAll(new RegExp(`(${AMT})\\s*(${CUR})`, 'gi'))) {
+    const v = parseMoney(m[1]);
+    if (v !== null && v > 0) cands.push({ v, cur: markerToIso(m[2]) });
   }
   if (cands.length) {
-    return { amount: Math.max(...cands), confidence: 'low', raw: 'currency-adjacent' };
+    cands.sort((a, b) => b.v - a.v);
+    return { amount: cands[0].v, currency: cands[0].cur, confidence: 'low', raw: 'currency-adjacent' };
   }
-  // 4) אין אות אמין — מחזירים null. עדיף להשאיר "לבדיקה" מאשר לנחש מספר שגוי.
-  return { amount: null, confidence: 'none', raw: '' };
+  // 4) אין אות אמין
+  return { amount: null, currency: null, confidence: 'none', raw: '' };
 }
 
-/** נוחות: בייטים של PDF → סכום */
+/** נוחות: בייטים של PDF → תוצאה */
 export async function amountFromPdf(data: ArrayBuffer | Uint8Array): Promise<AmountResult> {
   return parseAmount(await extractPdfText(data));
 }

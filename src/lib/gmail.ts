@@ -152,7 +152,24 @@ async function enrichAmountsFromPdf(invoices: Invoice[]): Promise<void> {
         const { amountFromPdf } = await import('./pdfAmount');
         const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
         const res = await amountFromPdf(bytes);
-        if (res.amount !== null && res.amount > 0) inv.amount = res.amount;
+        if (res.amount === null || res.amount <= 0) return;
+        const cur = res.currency ?? 'ILS';
+        if (cur === 'ILS') {
+          inv.amount = res.amount;
+        } else {
+          // מטבע זר → נמיר לשקלים לפי שער בתאריך החשבונית, ונשמור את המקור
+          inv.originalAmount = res.amount;
+          inv.currency = cur;
+          try {
+            const { convertToIls } = await import('./fx');
+            const { ils, rate } = await convertToIls(res.amount, cur, inv.issuedAt);
+            inv.amount = ils;
+            inv.fxRate = rate;
+          } catch {
+            // המרה נכשלה — נשאיר את הסכום המקורי (מסומן לבדיקה)
+            inv.amount = res.amount;
+          }
+        }
       } catch {
         // נשארים עם הניחוש מהנושא אם החילוץ נכשל
       }

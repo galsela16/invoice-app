@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Invoice } from '../types';
 import { downloadAttachment } from '../lib/gmail';
-import { formatCurrency, formatDate } from '../utils/format';
+import { formatCurrency, formatCurrencyCode, formatDate } from '../utils/format';
 
 interface Props {
   invoice: Invoice;
@@ -81,6 +81,9 @@ export function InvoiceModal({ invoice, onClose }: Props) {
             <p className="truncate font-semibold text-ink">{invoice.vendor}</p>
             <p className="truncate text-xs text-slate-500">
               {formatDate(invoice.issuedAt)} · {formatCurrency(invoice.amount)}
+              {invoice.currency && invoice.currency !== 'ILS' && invoice.originalAmount != null
+                ? ` (${formatCurrencyCode(invoice.originalAmount, invoice.currency)})`
+                : ''}
               {attachment ? ` · ${attachment.filename}` : ''}
             </p>
           </div>
