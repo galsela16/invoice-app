@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import type { Invoice } from '../types';
 import { formatCurrency, formatDate } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
 import { SourceBadge } from './SourceBadge';
+import { InvoiceModal } from './InvoiceModal';
 
 interface Props {
   invoices: Invoice[];
 }
 
 export function InvoiceList({ invoices }: Props) {
+  const [open, setOpen] = useState<Invoice | null>(null);
   if (invoices.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
@@ -34,11 +37,21 @@ export function InvoiceList({ invoices }: Props) {
         {invoices.map((inv) => (
           <li
             key={inv.id}
-            className="px-5 py-4 transition hover:bg-slate-50/70 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4"
+            onClick={inv.attachments?.length ? () => setOpen(inv) : undefined}
+            className={`px-5 py-4 transition hover:bg-slate-50/70 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4 ${
+              inv.attachments?.length ? 'cursor-pointer' : ''
+            }`}
           >
             {/* ספק + קטגוריה */}
             <div className="sm:col-span-5">
-              <p className="font-semibold text-ink">{inv.vendor}</p>
+              <p className="flex items-center gap-1.5 font-semibold text-ink">
+                {inv.vendor}
+                {!!inv.attachments?.length && (
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M15.6 4.4a3 3 0 00-4.2 0l-6 6a1.75 1.75 0 102.5 2.5l5-5a.75.75 0 011 1l-5 5a3.25 3.25 0 11-4.6-4.6l6-6a4.5 4.5 0 016.4 6.4l-6.3 6.3a5.75 5.75 0 11-8.1-8.1l5.6-5.6a.75.75 0 011 1L3.3 9.8a4.25 4.25 0 106 6l6.3-6.3a3 3 0 000-4.2z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </p>
               {inv.category && (
                 <p className="mt-0.5 text-xs text-slate-500">{inv.category}</p>
               )}
@@ -62,6 +75,8 @@ export function InvoiceList({ invoices }: Props) {
           </li>
         ))}
       </ul>
+
+      {open && <InvoiceModal invoice={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }
