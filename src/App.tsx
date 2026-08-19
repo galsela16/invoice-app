@@ -22,12 +22,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
 
-  // מצב Gmail
   const [gmailInvoices, setGmailInvoices] = useState<Invoice[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
   const [gmailError, setGmailError] = useState<string | null>(null);
 
+  // טעינת מקור הנתונים המקומי (כרגע ריק — בלי דמה)
   useEffect(() => {
     let alive = true;
     invoicesRepo.list().then((data) => {
@@ -39,6 +39,21 @@ export default function App() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // בטעינה: אם חזרנו מ-Google עם token — נטען מיילים. אם כבר מחוברים — נטען.
+  useEffect(() => {
+    const result = gmail.consumeRedirect();
+    if (result === 'connected') {
+      setGmailConnected(true);
+      loadFromGmail();
+    } else if (result === 'error') {
+      setGmailError('ההתחברות ל-Gmail נכשלה. נסו שוב.');
+    } else if (gmail.isConnected()) {
+      setGmailConnected(true);
+      loadFromGmail();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadFromGmail() {
@@ -56,16 +71,8 @@ export default function App() {
   }
 
   function handleConnect() {
-    setGmailLoading(true);
     setGmailError(null);
-    gmail.connect(
-      () => loadFromGmail(),
-      (msg) => {
-        setGmailError(msg);
-        setGmailLoading(false);
-      },
-      () => setGmailLoading(false)
-    );
+    gmail.beginConnect(); // מפנה את הדפדפן ל-Google
   }
 
   function handleDisconnect() {
@@ -75,7 +82,6 @@ export default function App() {
     setGmailError(null);
   }
 
-  // חשבוניות מ-Gmail מוצגות ראשונות, ואז נתוני הדמה
   const allInvoices = useMemo(
     () => [...gmailInvoices, ...invoices],
     [gmailInvoices, invoices]
@@ -93,7 +99,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface">
       <Header />
-
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         {loading ? (
           <LoadingState />
@@ -120,9 +125,8 @@ export default function App() {
           </>
         )}
       </main>
-
       <footer className="mx-auto max-w-5xl px-4 pb-8 pt-2 text-center text-xs text-slate-400 sm:px-6">
-        נתוני דמה + Gmail (טיוטות לבדיקה)
+        חשבוניות מ-Gmail (טיוטות לבדיקה)
       </footer>
     </div>
   );

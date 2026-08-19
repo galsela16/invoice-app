@@ -1,21 +1,23 @@
 import type { Invoice } from '../types';
 
-// ── חיבור Gmail (קריאה בלבד) ───────────────────────────────────
-// שימוש ב-Google Identity Services בדפדפן: מקבלים access token,
-// קוראים ישירות מול Gmail REST API. אין סוד (client secret) בצד לקוח —
-// רק ה-Client ID, שאינו סודי.
+// ── חיבור Gmail (קריאה בלבד) — שיטת הפניה מלאה (redirect) ─────────
+// במקום חלון קופץ (שנחסם ע"י COOP בחלק מהדפדפנים), האתר עצמו עובר
+// ל-Google, המשתמש מאשר, וחוזר לאתר עם access_token ב-hash של הכתובת.
+// שיטה זו חסינה ל-COOP כי אין שני חלונות.
 
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-// מה נחשב "חשבונית". אפשר לכוונן בהמשך — זו נקודת שליטה אחת.
+// מה נחשב "חשבונית". אפשר לכוונן בהמשך.
 export const INVOICE_QUERY =
   '(חשבונית OR "חשבונית מס" OR קבלה OR invoice OR receipt) newer_than:6m';
 
 const MAX_RESULTS = 25;
 
-let accessToken: string | null = null;
-let tokenClient: GoogleTokenClient | null = null;
+const TOKEN_KEY = 'gmail_access_token';
+const STATE_KEY = 'gmail_oauth_state';
+
+let accessToken: string | null = sessionStorage.getItem(TOKEN_KEY);
 
 /** האם הוגדר Client ID (משתנה סביבה)? */
 export function isConfigured(): boolean {
@@ -27,62 +29,68 @@ export function isConnected(): boolean {
   return Boolean(accessToken);
 }
 
-let cbOnToken: () => void = () => {};
-let cbOnError: (msg: string) => void = () => {};
-let cbOnDismiss: () => void = () => {};
-
-function ensureTokenClient(): GoogleTokenClient {
-  if (!window.google) {
-    throw new Error('ספריית Google עדיין נטענת. נסו שוב בעוד רגע.');
-  }
-  if (!tokenClient) {
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPE,
-      callback: (resp) => {
-        if (resp.error) {
-          cbOnError('ההתחברות ל-Gmail נכשלה.');
-          return;
-        }
-        accessToken = resp.access_token;
-        cbOnToken();
-      },
-      // חלק מהדפדפנים חוסמים בדיקת סגירת חלון (COOP) ומדווחים בטעות
-      // "popup_closed" גם כשההתחברות הצליחה. מתעלמים מזה — אם באמת
-      // התקבלה הרשאה, ה-callback למעלה כבר טיפל בה.
-      error_callback: (err: unknown) => {
-        const type = (err as { type?: string })?.type;
-        if (type === 'popup_failed_to_open') {
-          cbOnError('הדפדפן חסם את חלון ההתחברות. אפשרו חלונות קופצים ונסו שוב.');
-        } else {
-          // popup_closed / unknown — לרוב אזעקת שווא. פשוט מפסיקים טעינה.
-          cbOnDismiss();
-        }
-      },
-    });
-  }
-  return tokenClient;
+function redirectUri(): string {
+  return window.location.origin;
 }
 
-/** פותח את חלון ההרשאה של Google. */
-export function connect(
-  onToken: () => void,
-  onError: (msg: string) => void,
-  onDismiss: () => void
-): void {
-  cbOnToken = onToken;
-  cbOnError = onError;
-  cbOnDismiss = onDismiss;
-  const client = ensureTokenClient();
-  client.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+/** מתחיל התחברות: מפנה את הדפדפן למסך ההרשאה של Google. */
+export function beginConnect(): void {
+  const state = Math.random().toString(36).slice(2);
+  sessionStorage.setItem(STATE_KEY, state);
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: redirectUri(),
+    response_type: 'token',
+    scope: SCOPE,
+    include_granted_scopes: 'true',
+    state,
+    prompt: 'consent',
+  });
+  window.location.href =
+    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-/** מנתק ומבטל את ההרשאה. */
+function cleanUrl(): void {
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+/**
+ * נקרא בטעינת האפליקציה. אם חזרנו מ-Google עם token ב-hash — שומר אותו.
+ * מחזיר: 'connected' אם התקבלה הרשאה, 'error' אם הייתה שגיאה, אחרת null.
+ */
+export function consumeRedirect(): 'connected' | 'error' | null {
+  const hash = window.location.hash || '';
+  if (hash.includes('error=')) {
+    cleanUrl();
+    return 'error';
+  }
+  if (!hash.includes('access_token')) {
+    return null;
+  }
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get('access_token');
+  const returnedState = params.get('state');
+  const savedState = sessionStorage.getItem(STATE_KEY);
+  cleanUrl();
+  if (!token || !returnedState || returnedState !== savedState) {
+    return 'error';
+  }
+  accessToken = token;
+  sessionStorage.setItem(TOKEN_KEY, token);
+  return 'connected';
+}
+
+/** מנתק ומוחק את ההרשאה השמורה. */
 export function disconnect(): void {
-  if (accessToken && window.google) {
-    window.google.accounts.oauth2.revoke(accessToken);
-  }
+  const t = accessToken;
   accessToken = null;
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(STATE_KEY);
+  if (t) {
+    fetch(`https://oauth2.googleapis.com/revoke?token=${t}`, { method: 'POST' }).catch(
+      () => {}
+    );
+  }
 }
 
 async function gmailFetch<T>(path: string): Promise<T> {
@@ -91,6 +99,7 @@ async function gmailFetch<T>(path: string): Promise<T> {
   });
   if (res.status === 401) {
     accessToken = null;
+    sessionStorage.removeItem(TOKEN_KEY);
     throw new Error('ההרשאה פגה. התחברו שוב ל-Gmail.');
   }
   if (!res.ok) {
