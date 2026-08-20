@@ -1,4 +1,5 @@
 import type { Invoice, InvoiceAttachment } from '../types';
+import { parseAmount, type AmountResult } from './amountParser';
 
 // ── חיבור Gmail (קריאה בלבד) — שיטת הפניה מלאה (redirect) ─────────
 // במקום חלון קופץ (שנחסם ע"י COOP בחלק מהדפדפנים), האתר עצמו עובר
@@ -115,7 +116,7 @@ interface GmailHeader {
 interface GmailPart {
   filename?: string;
   mimeType?: string;
-  body?: { attachmentId?: string; size?: number };
+  body?: { attachmentId?: string; size?: number; data?: string };
   parts?: GmailPart[];
 }
 interface GmailMessage {
@@ -136,47 +137,107 @@ export async function fetchInvoiceEmails(): Promise<Invoice[]> {
   );
 
   const invoices = messages.map(toInvoice);
-  await enrichAmountsFromPdf(invoices);
-  return invoices;
+  const texts = new Map(
+    messages.map((m) => {
+      const h = m.payload?.headers;
+      const subject = headerValue(h, 'Subject');
+      const body = extractBodyText(m.payload as GmailPart | undefined);
+      return [`gmail-${m.id}`, `${subject} ${m.snippet ?? ''} ${body}`];
+    })
+  );
+  await enrichInvoices(invoices, texts);
+  // מסננים פריטים שאינם חשבוניות: בלי קובץ מצורף וגם בלי סכום שזוהה
+  return invoices.filter(isLikelyInvoice);
+}
+
+/** האם הפריט נראה כמו חשבונית אמיתית (יש קובץ מצורף או סכום שזוהה). */
+function isLikelyInvoice(inv: Invoice): boolean {
+  return (inv.attachments?.length ?? 0) > 0 || inv.amount > 0;
+}
+
+/** מחלץ טקסט מגוף המייל (text/plain מועדף, אחרת HTML מנוקה). */
+function extractBodyText(part: GmailPart | undefined): string {
+  const acc = { plain: '', html: '' };
+  collectBody(part, acc);
+  const raw = acc.plain.trim() ? acc.plain : stripHtml(acc.html);
+  return raw.replace(/\s+/g, ' ').trim();
+}
+function collectBody(part: GmailPart | undefined, acc: { plain: string; html: string }): void {
+  if (!part) return;
+  const mime = part.mimeType ?? '';
+  const data = part.body?.data;
+  if (data && !part.filename) {
+    if (mime === 'text/plain') acc.plain += ' ' + decodeB64Url(data);
+    else if (mime === 'text/html') acc.html += ' ' + decodeB64Url(data);
+  }
+  if (part.parts) for (const p of part.parts) collectBody(p, acc);
+}
+function decodeB64Url(data: string): string {
+  try {
+    return new TextDecoder('utf-8').decode(base64UrlToBytes(data));
+  } catch {
+    return '';
+  }
+}
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&[a-z]+;/gi, ' ');
 }
 
 /** מחלץ סכום אמיתי מקובץ ה-PDF המצורף (אם יש), ומעדכן את inv.amount. */
-async function enrichAmountsFromPdf(invoices: Invoice[]): Promise<void> {
+async function enrichInvoices(
+  invoices: Invoice[],
+  texts: Map<string, string>
+): Promise<void> {
   await Promise.all(
     invoices.map(async (inv) => {
+      let res: AmountResult | null = null;
+
+      // 1) קודם מנסים מתוך קובץ ה-PDF המצורף (אם יש)
       const pdf = inv.attachments?.find(
         (a) => a.mimeType === 'application/pdf' || /\.pdf$/i.test(a.filename)
       );
-      if (!pdf) return;
-      try {
-        const { amountFromPdf } = await import('./pdfAmount');
-        const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
-        const res = await amountFromPdf(bytes);
-        if (res.amount === null || res.amount <= 0) return;
-        const cur = res.currency ?? 'ILS';
-        if (cur === 'ILS') {
-          inv.amount = res.amount;
-        } else {
-          // מטבע זר → נמיר לשקלים לפי שער בתאריך החשבונית, ונשמור את המקור
-          inv.originalAmount = res.amount;
-          inv.currency = cur;
-          try {
-            const { convertToIls } = await import('./fx');
-            const { ils, rate } = await convertToIls(res.amount, cur, inv.issuedAt);
-            inv.amount = ils;
-            inv.fxRate = rate;
-          } catch {
-            // המרה נכשלה — נשאיר את הסכום המקורי (מסומן לבדיקה)
-            inv.amount = res.amount;
-          }
+      if (pdf) {
+        try {
+          const { amountFromPdf } = await import('./pdfAmount');
+          const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
+          res = await amountFromPdf(bytes);
+        } catch {
+          res = null;
         }
-      } catch {
-        // נשארים עם הניחוש מהנושא אם החילוץ נכשל
+      }
+
+      // 2) נפילה לגוף המייל (נושא + snippet + טקסט הגוף)
+      if (!res || res.amount === null || res.amount <= 0) {
+        const txt = texts.get(inv.id) ?? '';
+        if (txt) res = parseAmount(txt);
+      }
+
+      if (!res || res.amount === null || res.amount <= 0) return; // נשאר 0 (לבדיקה)
+
+      // 3) המרה לשקלים אם מטבע זר
+      const cur = res.currency ?? 'ILS';
+      if (cur === 'ILS') {
+        inv.amount = res.amount;
+      } else {
+        inv.originalAmount = res.amount;
+        inv.currency = cur;
+        try {
+          const { convertToIls } = await import('./fx');
+          const { ils, rate } = await convertToIls(res.amount, cur, inv.issuedAt);
+          inv.amount = ils;
+          inv.fxRate = rate;
+        } catch {
+          inv.amount = res.amount;
+        }
       }
     })
   );
 }
-
 /** מוריד את התוכן הבינארי של קובץ מצורף מ-Gmail. */
 export async function downloadAttachment(
   messageId: string,
@@ -226,18 +287,6 @@ function parseVendor(from: string): string {
   return email.split('@')[1]?.split('.')[0] ?? from.trim();
 }
 
-function parseAmount(text: string): number {
-  const re =
-    /(?:₪|ils|nis)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:₪|ils|nis|ש"ח|שקל)/gi;
-  let best = 0;
-  for (const m of text.matchAll(re)) {
-    const raw = (m[1] ?? m[2] ?? '').replace(/,/g, '');
-    const val = parseFloat(raw);
-    if (!isNaN(val) && val > best) best = val;
-  }
-  return best;
-}
-
 function parseDate(dateHeader: string): string {
   const d = dateHeader ? new Date(dateHeader) : new Date();
   return (isNaN(d.getTime()) ? new Date() : d).toISOString().slice(0, 10);
@@ -247,7 +296,6 @@ function toInvoice(msg: GmailMessage): Invoice {
   const headers = msg.payload?.headers;
   const from = headerValue(headers, 'From');
   const subject = headerValue(headers, 'Subject');
-  const snippet = msg.snippet ?? '';
 
   const attachments: InvoiceAttachment[] = [];
   // payload עצמו יכול להיות קובץ, וגם החלקים הפנימיים
@@ -256,7 +304,7 @@ function toInvoice(msg: GmailMessage): Invoice {
   return {
     id: `gmail-${msg.id}`,
     vendor: parseVendor(from) || subject || 'ללא שם',
-    amount: parseAmount(`${subject} ${snippet}`),
+    amount: 0, // ימולא ע"י enrichInvoices (מ-PDF או מגוף המייל)
     issuedAt: parseDate(headerValue(headers, 'Date')),
     status: 'review',
     source: 'gmail',

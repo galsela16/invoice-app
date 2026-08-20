@@ -7,9 +7,10 @@ import { InvoiceModal } from './InvoiceModal';
 
 interface Props {
   invoices: Invoice[];
+  onHide?: (id: string) => void;
 }
 
-export function InvoiceList({ invoices }: Props) {
+export function InvoiceList({ invoices, onHide }: Props) {
   const [open, setOpen] = useState<Invoice | null>(null);
   if (invoices.length === 0) {
     return (
@@ -73,8 +74,23 @@ export function InvoiceList({ invoices }: Props) {
                   </span>
                 )}
               </div>
-              <div className="sm:col-span-1 sm:text-left">
+              <div className="flex items-center gap-2 sm:col-span-1 sm:justify-start sm:text-left">
                 <StatusBadge status={inv.status} />
+                {onHide && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onHide(inv.id);
+                    }}
+                    title="הסתר — לא חשבונית"
+                    aria-label="הסתר"
+                    className="shrink-0 rounded p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500"
+                  >
+                    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                      <path d="M10 8.586 4.707 3.293 3.293 4.707 8.586 10l-5.293 5.293 1.414 1.414L10 11.414l5.293 5.293 1.414-1.414L11.414 10l5.293-5.293-1.414-1.414L10 8.586z" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </li>

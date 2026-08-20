@@ -12,6 +12,7 @@ import {
 import { monthLabel } from './utils/format';
 import * as gmail from './lib/gmail';
 import { exportInvoicesZip, countAttachments, type ExportProgress } from './lib/exportZip';
+import { loadDismissed, saveDismissed } from './lib/dismissed';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
 import { Filters } from './components/Filters';
@@ -22,6 +23,16 @@ export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+
+  function hideInvoice(id: string) {
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      saveDismissed(next);
+      return next;
+    });
+  }
 
   const [gmailInvoices, setGmailInvoices] = useState<Invoice[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -101,8 +112,8 @@ export default function App() {
   }
 
   const allInvoices = useMemo(
-    () => [...gmailInvoices, ...invoices],
-    [gmailInvoices, invoices]
+    () => [...gmailInvoices, ...invoices].filter((i) => !dismissed.has(i.id)),
+    [gmailInvoices, invoices, dismissed]
   );
 
   const months = useMemo(() => availableMonths(allInvoices), [allInvoices]);
@@ -143,7 +154,7 @@ export default function App() {
               onChange={setFilters}
               onReset={() => setFilters(EMPTY_FILTERS)}
             />
-            <InvoiceList invoices={filtered} />
+            <InvoiceList invoices={filtered} onHide={hideInvoice} />
           </>
         )}
       </main>
