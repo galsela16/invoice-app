@@ -215,6 +215,25 @@ function isExcludedDocType(identity: string, full: string): boolean {
   return false;
 }
 
+/** מחזיר את תוכן המייל כ-HTML להצגה בתוך האפליקציה (text/html מועדף). */
+export async function fetchMessageHtml(messageId: string): Promise<string> {
+  const msg = await gmailFetch<GmailMessage>(`messages/${messageId}?format=full`);
+  const acc = { plain: '', html: '' };
+  collectBody(msg.payload as GmailPart | undefined, acc);
+  if (acc.html.trim()) return acc.html;
+  const plain = acc.plain.trim();
+  if (plain) {
+    return `<pre style="white-space:pre-wrap;font-family:sans-serif;padding:16px;margin:0">${escapeHtml(
+      plain
+    )}</pre>`;
+  }
+  return '<div style="padding:16px;color:#64748b;font-family:sans-serif">אין תוכן להצגה.</div>';
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /** מחלץ טקסט מגוף המייל (text/plain מועדף, אחרת HTML מנוקה). */
 function extractBodyText(part: GmailPart | undefined): string {
   const acc = { plain: '', html: '' };
