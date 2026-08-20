@@ -1,5 +1,6 @@
 import type { Invoice, InvoiceAttachment } from '../types';
 import { parseAmount, type AmountResult } from './amountParser';
+import { getAmount, setAmount } from './amountCache';
 
 // ── חיבור Gmail (קריאה בלבד) — שיטת הפניה מלאה (redirect) ─────────
 // במקום חלון קופץ (שנחסם ע"י COOP בחלק מהדפדפנים), האתר עצמו עובר
@@ -11,9 +12,12 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // מה נחשב "חשבונית". אפשר לכוונן בהמשך.
 export const INVOICE_QUERY =
-  '(חשבונית OR "חשבונית מס" OR קבלה OR invoice OR receipt) newer_than:6m';
+  '(חשבונית OR "חשבונית מס" OR קבלה OR invoice OR receipt) after:2024/12/31';
 
-const MAX_RESULTS = 25;
+const PAGE_SIZE = 100; // לכל עמוד ב-Gmail
+const MAX_TOTAL = 400; // תקרת מיילים כוללת (ניתן להגדיל)
+const FETCH_CONCURRENCY = 8; // משיכת פרטי מייל במקביל
+const PARSE_CONCURRENCY = 6; // הורדת+פענוח PDF במקביל
 
 const TOKEN_KEY = 'gmail_access_token';
 const STATE_KEY = 'gmail_oauth_state';
@@ -126,15 +130,42 @@ interface GmailMessage {
 }
 
 /** מושך מיילים שנראים כמו חשבוניות וממיר אותם ל"טיוטות" חשבונית. */
-export async function fetchInvoiceEmails(): Promise<Invoice[]> {
-  const list = await gmailFetch<{ messages?: { id: string }[] }>(
-    `messages?q=${encodeURIComponent(INVOICE_QUERY)}&maxResults=${MAX_RESULTS}`
-  );
-  const ids = (list.messages ?? []).map((m) => m.id);
+/** מריץ fn על הפריטים עם הגבלת מקביליות. */
+async function mapLimit<T>(items: T[], limit: number, fn: (t: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
 
-  const messages = await Promise.all(
-    ids.map((id) => gmailFetch<GmailMessage>(`messages/${id}?format=full`))
-  );
+/** מושך את כל מזהי המיילים התואמים, עם עימוד עד תקרה. */
+async function listMessageIds(query: string, cap: number): Promise<string[]> {
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ q: query, maxResults: String(PAGE_SIZE) });
+    if (pageToken) params.set('pageToken', pageToken);
+    const page = await gmailFetch<{ messages?: { id: string }[]; nextPageToken?: string }>(
+      `messages?${params.toString()}`
+    );
+    for (const m of page.messages ?? []) ids.push(m.id);
+    pageToken = page.nextPageToken;
+  } while (pageToken && ids.length < cap);
+  return ids.slice(0, cap);
+}
+
+export async function fetchInvoiceEmails(): Promise<Invoice[]> {
+  const ids = await listMessageIds(INVOICE_QUERY, MAX_TOTAL);
+
+  const messages: GmailMessage[] = [];
+  await mapLimit(ids, FETCH_CONCURRENCY, async (id) => {
+    const m = await gmailFetch<GmailMessage>(`messages/${id}?format=full`);
+    messages.push(m);
+  });
 
   const invoices = messages.map(toInvoice);
   const texts = new Map(
@@ -193,50 +224,66 @@ async function enrichInvoices(
   invoices: Invoice[],
   texts: Map<string, string>
 ): Promise<void> {
-  await Promise.all(
-    invoices.map(async (inv) => {
-      let res: AmountResult | null = null;
+  await mapLimit(invoices, PARSE_CONCURRENCY, async (inv) => {
+    // 0) מטמון — אם כבר חילצנו את החשבונית הזו בעבר, לא מורידים שוב
+    const cached = getAmount(inv.id);
+    if (cached) {
+      inv.amount = cached.amount;
+      if (cached.currency) inv.currency = cached.currency;
+      if (cached.originalAmount != null) inv.originalAmount = cached.originalAmount;
+      if (cached.fxRate != null) inv.fxRate = cached.fxRate;
+      return;
+    }
 
-      // 1) קודם מנסים מתוך קובץ ה-PDF המצורף (אם יש)
-      const pdf = inv.attachments?.find(
-        (a) => a.mimeType === 'application/pdf' || /\.pdf$/i.test(a.filename)
-      );
-      if (pdf) {
-        try {
-          const { amountFromPdf } = await import('./pdfAmount');
-          const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
-          res = await amountFromPdf(bytes);
-        } catch {
-          res = null;
-        }
+    let res: AmountResult | null = null;
+
+    // 1) קודם מנסים מתוך קובץ ה-PDF המצורף (אם יש)
+    const pdf = inv.attachments?.find(
+      (a) => a.mimeType === 'application/pdf' || /\.pdf$/i.test(a.filename)
+    );
+    if (pdf) {
+      try {
+        const { amountFromPdf } = await import('./pdfAmount');
+        const bytes = await downloadAttachment(pdf.messageId, pdf.attachmentId);
+        res = await amountFromPdf(bytes);
+      } catch {
+        res = null;
       }
+    }
 
-      // 2) נפילה לגוף המייל (נושא + snippet + טקסט הגוף)
-      if (!res || res.amount === null || res.amount <= 0) {
-        const txt = texts.get(inv.id) ?? '';
-        if (txt) res = parseAmount(txt);
-      }
+    // 2) נפילה לגוף המייל (נושא + snippet + טקסט הגוף)
+    if (!res || res.amount === null || res.amount <= 0) {
+      const txt = texts.get(inv.id) ?? '';
+      if (txt) res = parseAmount(txt);
+    }
 
-      if (!res || res.amount === null || res.amount <= 0) return; // נשאר 0 (לבדיקה)
+    if (!res || res.amount === null || res.amount <= 0) return; // נשאר 0 (לבדיקה)
 
-      // 3) המרה לשקלים אם מטבע זר
-      const cur = res.currency ?? 'ILS';
-      if (cur === 'ILS') {
+    // 3) המרה לשקלים אם מטבע זר
+    const cur = res.currency ?? 'ILS';
+    if (cur === 'ILS') {
+      inv.amount = res.amount;
+    } else {
+      inv.originalAmount = res.amount;
+      inv.currency = cur;
+      try {
+        const { convertToIls } = await import('./fx');
+        const { ils, rate } = await convertToIls(res.amount, cur, inv.issuedAt);
+        inv.amount = ils;
+        inv.fxRate = rate;
+      } catch {
         inv.amount = res.amount;
-      } else {
-        inv.originalAmount = res.amount;
-        inv.currency = cur;
-        try {
-          const { convertToIls } = await import('./fx');
-          const { ils, rate } = await convertToIls(res.amount, cur, inv.issuedAt);
-          inv.amount = ils;
-          inv.fxRate = rate;
-        } catch {
-          inv.amount = res.amount;
-        }
       }
-    })
-  );
+    }
+
+    // 4) שמירה במטמון להרצה הבאה
+    setAmount(inv.id, {
+      amount: inv.amount,
+      currency: inv.currency,
+      originalAmount: inv.originalAmount,
+      fxRate: inv.fxRate,
+    });
+  });
 }
 /** מוריד את התוכן הבינארי של קובץ מצורף מ-Gmail. */
 export async function downloadAttachment(
