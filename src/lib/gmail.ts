@@ -168,22 +168,51 @@ export async function fetchInvoiceEmails(): Promise<Invoice[]> {
   });
 
   const invoices = messages.map(toInvoice);
-  const texts = new Map(
-    messages.map((m) => {
-      const h = m.payload?.headers;
-      const subject = headerValue(h, 'Subject');
-      const body = extractBodyText(m.payload as GmailPart | undefined);
-      return [`gmail-${m.id}`, `${subject} ${m.snippet ?? ''} ${body}`];
-    })
-  );
+  const texts = new Map<string, string>();
+  const identities = new Map<string, string>();
+  for (const m of messages) {
+    const id = `gmail-${m.id}`;
+    const subject = headerValue(m.payload?.headers, 'Subject');
+    const body = extractBodyText(m.payload as GmailPart | undefined);
+    texts.set(id, `${subject} ${m.snippet ?? ''} ${body}`);
+    // "זהות" המסמך: נושא + שמות הקבצים המצורפים — הכי אמין לסוג המסמך
+    const invForId = invoices.find((iv) => iv.id === id);
+    const filenames = (invForId?.attachments ?? []).map((a) => a.filename).join(' ');
+    identities.set(id, `${subject} ${filenames}`);
+  }
   await enrichInvoices(invoices, texts);
-  // מסננים פריטים שאינם חשבוניות: בלי קובץ מצורף וגם בלי סכום שזוהה
-  return invoices.filter(isLikelyInvoice);
+  // משאירים רק חשבונית / חשבונית מס / קבלה — מחריגים הצעות מחיר, הזמנות, משלוחים, דפי חשבון
+  return invoices.filter(
+    (inv) =>
+      isLikelyInvoice(inv) && !isExcludedDocType(identities.get(inv.id) ?? '', texts.get(inv.id) ?? '')
+  );
 }
 
 /** האם הפריט נראה כמו חשבונית אמיתית (יש קובץ מצורף או סכום שזוהה). */
 function isLikelyInvoice(inv: Invoice): boolean {
   return (inv.attachments?.length ?? 0) > 0 || inv.amount > 0;
+}
+
+// מילים שמעידות שהמסמך אינו חשבונית — נבדקות בזהות (נושא+שם קובץ)
+const EXCLUDE_ID = [
+  'הצעת מחיר', 'הצעת־מחיר', 'quote', 'quotation', 'estimate',
+  'חשבון עסקה', 'פרופורמה', 'proforma', 'pro forma', 'pro-forma',
+  'תעודת משלוח', 'delivery note', 'delivery order', 'packing slip',
+  'אישור הזמנה', 'order confirmation', 'purchase order',
+  'דף חשבון', 'account statement', 'statement of account', 'statement',
+];
+// כותרות חזקות שמופיעות רק במסמכים שאינם חשבונית — נבדקות גם בגוף/PDF
+const EXCLUDE_STRONG = [
+  'הצעת מחיר', 'תעודת משלוח', 'pro forma', 'proforma', 'delivery note', 'חשבון עסקה',
+];
+
+/** מחריג מסמכים שהם ברור לא חשבונית (הצעת מחיר/הזמנה/משלוח/דף חשבון). */
+function isExcludedDocType(identity: string, full: string): boolean {
+  const id = identity.toLowerCase();
+  if (EXCLUDE_ID.some((t) => id.includes(t.toLowerCase()))) return true;
+  const f = full.toLowerCase();
+  if (EXCLUDE_STRONG.some((t) => f.includes(t.toLowerCase()))) return true;
+  return false;
 }
 
 /** מחלץ טקסט מגוף המייל (text/plain מועדף, אחרת HTML מנוקה). */
