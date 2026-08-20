@@ -28,8 +28,11 @@ export function countAttachments(invoices: Invoice[]): number {
  * מוריד את כל הקבצים המצורפים ובונה ZIP מחולק לפי חודשים.
  * onProgress מדווח על ההתקדמות (כמה קבצים הורדו מתוך הסה"כ).
  */
+export type GroupBy = 'month' | 'year';
+
 export async function exportInvoicesZip(
   invoices: Invoice[],
+  groupBy: GroupBy = 'month',
   onProgress?: (p: ExportProgress) => void
 ): Promise<void> {
   const withFiles = invoices.filter((inv) => (inv.attachments?.length ?? 0) > 0);
@@ -42,7 +45,8 @@ export async function exportInvoicesZip(
   let done = 0;
 
   for (const inv of withFiles) {
-    const folder = monthKey(inv.issuedAt); // "2025-07"
+    // תיקייה לפי הבחירה: חודש (2025-07) או שנה (2025)
+    const folder = groupBy === 'year' ? inv.issuedAt.slice(0, 4) : monthKey(inv.issuedAt);
     const dateLabel = formatDate(inv.issuedAt).replace(/\//g, '-'); // 08-07-2025
     const vendor = sanitize(inv.vendor);
 
@@ -57,7 +61,8 @@ export async function exportInvoicesZip(
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  triggerDownload(blob, `חשבוניות_${new Date().toISOString().slice(0, 10)}.zip`);
+  const scope = groupBy === 'year' ? 'לפי-שנה' : 'לפי-חודש';
+  triggerDownload(blob, `חשבוניות_${scope}_${new Date().toISOString().slice(0, 10)}.zip`);
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

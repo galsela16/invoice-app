@@ -11,7 +11,7 @@ import {
 } from './lib/selectors';
 import { monthLabel } from './utils/format';
 import * as gmail from './lib/gmail';
-import { exportInvoicesZip, countAttachments, type ExportProgress } from './lib/exportZip';
+import { exportInvoicesZip, countAttachments, type ExportProgress, type GroupBy } from './lib/exportZip';
 import { loadDismissed, saveDismissed } from './lib/dismissed';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
@@ -42,12 +42,12 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 
-  async function handleExport() {
+  async function handleExport(groupBy: GroupBy) {
     setExporting(true);
     setExportProgress({ done: 0, total: countAttachments(gmailInvoices) });
     setGmailError(null);
     try {
-      await exportInvoicesZip(gmailInvoices, (p) => setExportProgress(p));
+      await exportInvoicesZip(gmailInvoices, groupBy, (p) => setExportProgress(p));
     } catch (err) {
       setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא.');
     } finally {

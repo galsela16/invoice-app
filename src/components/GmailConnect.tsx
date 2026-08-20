@@ -10,7 +10,7 @@ interface Props {
   onConnect: () => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onExport: () => void;
+  onExport: (groupBy: 'month' | 'year') => void;
 }
 
 export function GmailConnect({
@@ -61,14 +61,25 @@ export function GmailConnect({
         <div className="flex flex-wrap items-center gap-2">
           {connected ? (
             <>
-              <button
-                onClick={onExport}
-                disabled={exporting || loading || attachmentCount === 0}
-                title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : undefined}
-                className="rounded-lg bg-ink px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
-              >
-                {exporting ? 'מייצא…' : 'ייצוא לרואה חשבון'}
-              </button>
+              <div className="flex items-center overflow-hidden rounded-lg bg-ink shadow-sm">
+                <span className="px-2.5 py-2 text-xs font-medium text-white/70">ייצוא לרו״ח</span>
+                <button
+                  onClick={() => onExport('month')}
+                  disabled={exporting || loading || attachmentCount === 0}
+                  title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : 'תיקייה לכל חודש'}
+                  className="border-r border-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {exporting ? 'מייצא…' : 'לפי חודש'}
+                </button>
+                <button
+                  onClick={() => onExport('year')}
+                  disabled={exporting || loading || attachmentCount === 0}
+                  title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : 'תיקייה לכל שנה'}
+                  className="px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                >
+                  לפי שנה
+                </button>
+              </div>
               <button
                 onClick={onRefresh}
                 disabled={loading || exporting}
