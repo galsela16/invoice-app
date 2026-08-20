@@ -6,7 +6,7 @@ export interface CachedAmount {
   fxRate?: number;
 }
 
-const KEY = 'amountCacheV1';
+const KEY = 'amountCacheV2'; // הועלה כדי לנקות סכומים שגויים ישנים
 
 function loadAll(): Record<string, CachedAmount> {
   try {

@@ -1,14 +1,18 @@
-// פרסר טקסט טהור לחילוץ סכום ומטבע — בלי תלות ב-pdf.js,
-// כדי שאפשר להריץ אותו גם על גוף המייל וגם על טקסט PDF.
+// פרסר טקסט טהור לחילוץ סכום ומטבע — בלי תלות ב-pdf.js.
+// עיקרון: שמרני. לוקח סכום רק כשהוא עוגן למילת-מפתח או יחיד וברור,
+// פוסל מספרים שנראים כמזהים או חורגים מסף הגיוני, ולא מנחש בעמימות.
 
 export interface AmountResult {
   amount: number | null;
-  currency: string | null; // ISO של המטבע שזוהה (EUR/USD/ILS...), או null
+  currency: string | null;
   confidence: 'high' | 'low' | 'none';
   raw: string;
 }
 
-// פענוח מספר לפי פורמט (תומך גם באירופאי: 16,00 / 1.234,56)
+// סף עליון הגיוני לסכום חשבונית (במטבע המקורי). מעליו — כנראה מספר כיסוי/מזהה.
+// ניתן לשנות אם באמת יש חשבוניות גדולות מזה.
+const MAX_PLAUSIBLE = 1_000_000;
+
 function parseMoney(token: string): number | null {
   const t = token.trim();
   const lc = t.lastIndexOf(',');
@@ -30,6 +34,15 @@ function parseMoney(token: string): number | null {
   return isNaN(n) ? null : n;
 }
 
+// האם v (מהטוקן tok) הוא סכום סביר, ולא מזהה/מספר חשבונית/סכום כיסוי?
+function plausible(v: number | null, tok: string): v is number {
+  if (v === null || v <= 0 || v > MAX_PLAUSIBLE) return false;
+  const digits = tok.replace(/[^\d]/g, '');
+  const hasDecimal = /[.,]\d{1,2}$/.test(tok.trim());
+  if (!hasDecimal && digits.length >= 7) return false; // נראה כמו מזהה
+  return true;
+}
+
 function markerToIso(marker: string | undefined): string | null {
   if (!marker) return null;
   const s = marker.replace(/["\u05f4\s]/g, '').toUpperCase();
@@ -43,6 +56,7 @@ function markerToIso(marker: string | undefined): string | null {
 const AMT = String.raw`\d[\d.,\u00a0]*\d|\d`;
 const CUR = String.raw`₪|€|\$|£|EUR|ILS|NIS|USD|GBP|ש"?ח|שקל`;
 
+// מילות מפתח ל"סכום כולל / לתשלום" בלבד — עוגן חזק לזיהוי הסכום הנכון.
 const KEYWORDS = [
   String.raw`סה["\u05f4]?כ\s*לתשלום`,
   String.raw`סך\s*הכל\s*לתשלום`,
@@ -58,38 +72,42 @@ const KEYWORDS = [
 export function parseAmount(text: string): AmountResult {
   const t = text.replace(/[\u200e\u200f\u202a-\u202e]/g, '').replace(/\s+/g, ' ');
 
+  // 1) מילת מפתח + סכום שצמוד למטבע (הכי אמין)
   for (const k of KEYWORDS) {
     const re = new RegExp(
-      k + `[^0-9]{0,15}(?:(${CUR})\\s*(${AMT})|(${AMT})\\s*(${CUR}))`,
+      k + `[^0-9]{0,12}(?:(${CUR})\\s*(${AMT})|(${AMT})\\s*(${CUR}))`,
       'i'
     );
     const m = t.match(re);
     if (m) {
-      const v = parseMoney(m[2] ?? m[3]);
-      const cur = markerToIso(m[1] ?? m[4]);
-      if (v !== null && v > 0) return { amount: v, currency: cur, confidence: 'high', raw: m[0] };
+      const tok = m[2] ?? m[3];
+      const v = parseMoney(tok);
+      if (plausible(v, tok)) return { amount: v, currency: markerToIso(m[1] ?? m[4]), confidence: 'high', raw: m[0] };
     }
   }
+  // 2) מילת מפתח + מספר סמוך (בלי מטבע)
   for (const k of KEYWORDS) {
-    const re = new RegExp(k + `[^0-9]{0,15}(${AMT})`, 'i');
+    const re = new RegExp(k + `[^0-9]{0,12}(${AMT})`, 'i');
     const m = t.match(re);
     if (m) {
       const v = parseMoney(m[1]);
-      if (v !== null && v > 0) return { amount: v, currency: null, confidence: 'high', raw: m[0] };
+      if (plausible(v, m[1])) return { amount: v, currency: null, confidence: 'high', raw: m[0] };
     }
   }
-  const cands: { v: number; cur: string | null }[] = [];
+  // 3) בלי מילת מפתח — לוקחים רק אם יש בדיוק סכום *אחד* ברור שצמוד למטבע
+  const seen = new Map<number, string | null>();
   for (const m of t.matchAll(new RegExp(`(${CUR})\\s*(${AMT})`, 'gi'))) {
     const v = parseMoney(m[2]);
-    if (v !== null && v > 0) cands.push({ v, cur: markerToIso(m[1]) });
+    if (plausible(v, m[2])) seen.set(v, markerToIso(m[1]));
   }
   for (const m of t.matchAll(new RegExp(`(${AMT})\\s*(${CUR})`, 'gi'))) {
     const v = parseMoney(m[1]);
-    if (v !== null && v > 0) cands.push({ v, cur: markerToIso(m[2]) });
+    if (plausible(v, m[1])) seen.set(v, markerToIso(m[2]));
   }
-  if (cands.length) {
-    cands.sort((a, b) => b.v - a.v);
-    return { amount: cands[0].v, currency: cands[0].cur, confidence: 'low', raw: 'currency-adjacent' };
+  if (seen.size === 1) {
+    const [v, cur] = [...seen][0];
+    return { amount: v, currency: cur, confidence: 'low', raw: 'single currency-adjacent' };
   }
+  // אחרת — לא מנחשים. עדיף "לבדיקה" מאשר מספר שגוי.
   return { amount: null, currency: null, confidence: 'none', raw: '' };
 }

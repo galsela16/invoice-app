@@ -12,7 +12,7 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // מה נחשב "חשבונית". אפשר לכוונן בהמשך.
 export const INVOICE_QUERY =
-  '(חשבונית OR "חשבונית מס" OR קבלה OR invoice OR receipt) after:2024/12/31';
+  '(חשבונית OR "חשבונית מס" OR קבלה OR invoice OR receipt) after:2024/12/31 -from:me';
 
 const PAGE_SIZE = 100; // לכל עמוד ב-Gmail
 const MAX_TOTAL = 400; // תקרת מיילים כוללת (ניתן להגדיל)
