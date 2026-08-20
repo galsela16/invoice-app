@@ -6,12 +6,14 @@ import { monthKey } from '../utils/format';
 
 export interface Filters {
   search: string;
-  month: string | 'all'; // "2025-07" או "all"
+  year: string | 'all'; // "2025" או "all"
+  month: string | 'all'; // "01".."12" או "all"
   source: InvoiceSource | 'all';
 }
 
 export const EMPTY_FILTERS: Filters = {
   search: '',
+  year: 'all',
   month: 'all',
   source: 'all',
 };
@@ -19,7 +21,8 @@ export const EMPTY_FILTERS: Filters = {
 export function filterInvoices(invoices: Invoice[], f: Filters): Invoice[] {
   const q = f.search.trim().toLowerCase();
   return invoices.filter((inv) => {
-    if (f.month !== 'all' && monthKey(inv.issuedAt) !== f.month) return false;
+    if (f.year !== 'all' && inv.issuedAt.slice(0, 4) !== f.year) return false;
+    if (f.month !== 'all' && inv.issuedAt.slice(5, 7) !== f.month) return false;
     if (f.source !== 'all' && inv.source !== f.source) return false;
     if (q) {
       const haystack = `${inv.vendor} ${inv.category ?? ''} ${inv.note ?? ''}`.toLowerCase();
@@ -35,9 +38,15 @@ export function summarize(invoices: Invoice[]): MonthlySummary {
   return { total, count: invoices.length };
 }
 
-/** רשימת החודשים הקיימים בנתונים, מהחדש לישן. */
+/** רשימת החודשים הקיימים (מפתחות YYYY-MM), מהחדש לישן — לבורר הייצוא. */
 export function availableMonths(invoices: Invoice[]): string[] {
   const set = new Set(invoices.map((i) => monthKey(i.issuedAt)));
+  return [...set].sort().reverse();
+}
+
+/** רשימת השנים הקיימות בנתונים, מהחדשה לישנה. */
+export function availableYears(invoices: Invoice[]): string[] {
+  const set = new Set(invoices.map((i) => i.issuedAt.slice(0, 4)));
   return [...set].sort().reverse();
 }
 

@@ -6,10 +6,11 @@ import {
   filterInvoices,
   summarize,
   availableMonths,
+  availableYears,
   sortByDateDesc,
   type Filters as FiltersState,
 } from './lib/selectors';
-import { monthLabel } from './utils/format';
+import { monthNameByNum } from './utils/format';
 import * as gmail from './lib/gmail';
 import { exportInvoicesZip, countAttachments, type ExportProgress, type GroupBy } from './lib/exportZip';
 import { loadDismissed, saveDismissed } from './lib/dismissed';
@@ -43,12 +44,20 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 
-  async function handleExport(groupBy: GroupBy) {
+  // מסנן את החשבוניות לתקופה שנבחרה: 'all' | שנה "2025" | חודש "2025-07"
+  function scopeToPeriod(list: Invoice[], period: string): Invoice[] {
+    if (period === 'all') return list;
+    if (period.length === 4) return list.filter((i) => i.issuedAt.slice(0, 4) === period);
+    return list.filter((i) => i.issuedAt.slice(0, 7) === period);
+  }
+
+  async function handleExport(groupBy: GroupBy, period: string) {
+    const scoped = scopeToPeriod(exportInvoices, period);
     setExporting(true);
-    setExportProgress({ done: 0, total: countAttachments(exportInvoices) });
+    setExportProgress({ done: 0, total: countAttachments(scoped) });
     setGmailError(null);
     try {
-      await exportInvoicesZip(exportInvoices, groupBy, (p) => setExportProgress(p));
+      await exportInvoicesZip(scoped, groupBy, (p) => setExportProgress(p));
     } catch (err) {
       setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא.');
     } finally {
@@ -57,10 +66,10 @@ export default function App() {
     }
   }
 
-  async function handleExportExcel(groupBy: GroupBy) {
+  async function handleExportExcel(groupBy: GroupBy, period: string) {
     setGmailError(null);
     try {
-      await exportReportXlsx(exportInvoices, groupBy);
+      await exportReportXlsx(scopeToPeriod(exportInvoices, period), groupBy);
     } catch (err) {
       setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא הדוח.');
     }
@@ -131,14 +140,23 @@ export default function App() {
     [gmailInvoices, invoices, dismissed]
   );
 
-  const months = useMemo(() => availableMonths(allInvoices), [allInvoices]);
+  const years = useMemo(() => availableYears(allInvoices), [allInvoices]);
+  const exportMonthKeys = useMemo(() => availableMonths(exportInvoices), [exportInvoices]);
+  const exportYearList = useMemo(() => availableYears(exportInvoices), [exportInvoices]);
   const filtered = useMemo(
     () => sortByDateDesc(filterInvoices(allInvoices, filters)),
     [allInvoices, filters]
   );
   const summary = useMemo(() => summarize(filtered), [filtered]);
 
-  const periodLabel = filters.month === 'all' ? 'כל החודשים' : monthLabel(filters.month);
+  const periodLabel = (() => {
+    const y = filters.year !== 'all' ? filters.year : '';
+    const m = filters.month !== 'all' ? monthNameByNum(filters.month) : '';
+    if (!y && !m) return 'כל התקופות';
+    if (y && m) return `${m} ${y}`;
+    if (y) return y;
+    return `${m} (כל השנים)`;
+  })();
 
   return (
     <div className="min-h-screen bg-surface">
@@ -163,10 +181,12 @@ export default function App() {
               onDisconnect={handleDisconnect}
               onExport={handleExport}
               onExportExcel={handleExportExcel}
+              exportYears={exportYearList}
+              exportMonths={exportMonthKeys}
             />
             <Filters
               filters={filters}
-              months={months}
+              years={years}
               onChange={setFilters}
               onReset={() => setFilters(EMPTY_FILTERS)}
             />

@@ -1,13 +1,15 @@
 import type { Filters as FiltersState } from '../lib/selectors';
 import { SOURCE_LABEL, SOURCE_ORDER } from '../lib/labels';
-import { monthLabel } from '../utils/format';
+import { monthNameByNum } from '../utils/format';
 
 interface Props {
   filters: FiltersState;
-  months: string[];
+  years: string[]; // רשימת שנים קיימות
   onChange: (next: FiltersState) => void;
   onReset: () => void;
 }
+
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 
 const selectClass =
   'w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pl-8 text-sm font-medium text-ink shadow-sm transition hover:border-slate-300 focus:border-brand';
@@ -29,9 +31,10 @@ function Chevron() {
   );
 }
 
-export function Filters({ filters, months, onChange, onReset }: Props) {
+export function Filters({ filters, years, onChange, onReset }: Props) {
   const hasActive =
     filters.search !== '' ||
+    filters.year !== 'all' ||
     filters.month !== 'all' ||
     filters.source !== 'all';
 
@@ -60,8 +63,25 @@ export function Filters({ filters, months, onChange, onReset }: Props) {
         />
       </div>
 
-      {/* סינונים */}
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {/* סינונים: שנה / חודש / מקור */}
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="relative">
+          <select
+            aria-label="סינון לפי שנה"
+            value={filters.year}
+            onChange={(e) => onChange({ ...filters, year: e.target.value })}
+            className={selectClass}
+          >
+            <option value="all">כל השנים</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <Chevron />
+        </div>
+
         <div className="relative">
           <select
             aria-label="סינון לפי חודש"
@@ -70,9 +90,9 @@ export function Filters({ filters, months, onChange, onReset }: Props) {
             className={selectClass}
           >
             <option value="all">כל החודשים</option>
-            {months.map((m) => (
+            {MONTHS.map((m) => (
               <option key={m} value={m}>
-                {monthLabel(m)}
+                {monthNameByNum(m)}
               </option>
             ))}
           </select>

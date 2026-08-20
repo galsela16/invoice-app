@@ -45,6 +45,12 @@ const MONTH_NAMES_HE = [
   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר',
 ];
 
+/** "07" → "יולי" */
+export function monthNameByNum(mm: string): string {
+  const idx = Number(mm) - 1;
+  return MONTH_NAMES_HE[idx] ?? mm;
+}
+
 /** "2025-07" → "יולי 2025" */
 export function monthLabel(key: string): string {
   const [year, month] = key.split('-');

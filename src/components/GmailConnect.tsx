@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { ExportDialog } from './ExportDialog';
+import { monthLabel } from '../utils/format';
 interface Props {
   configured: boolean;
   connected: boolean;
@@ -10,8 +13,10 @@ interface Props {
   onConnect: () => void;
   onRefresh: () => void;
   onDisconnect: () => void;
-  onExport: (groupBy: 'month' | 'year') => void;
-  onExportExcel: (groupBy: 'month' | 'year') => void;
+  onExport: (groupBy: 'month' | 'year', period: string) => void;
+  onExportExcel: (groupBy: 'month' | 'year', period: string) => void;
+  exportYears: string[];
+  exportMonths: string[]; // מפתחות YYYY-MM
 }
 
 export function GmailConnect({
@@ -28,7 +33,26 @@ export function GmailConnect({
   onDisconnect,
   onExport,
   onExportExcel,
+  exportYears,
+  exportMonths,
 }: Props) {
+  const [dialog, setDialog] = useState<{
+    kind: 'zip' | 'excel';
+    groupBy: 'month' | 'year';
+  } | null>(null);
+
+  function pick(value: string) {
+    if (!dialog) return;
+    const { kind, groupBy } = dialog;
+    setDialog(null);
+    if (kind === 'zip') onExport(groupBy, value);
+    else onExportExcel(groupBy, value);
+  }
+
+  const dialogOptions =
+    dialog?.groupBy === 'year'
+      ? [{ value: 'all', label: 'כל השנים' }, ...exportYears.map((y) => ({ value: y, label: y }))]
+      : [{ value: 'all', label: 'כל החודשים' }, ...exportMonths.map((m) => ({ value: m, label: monthLabel(m) }))];
   // עדיין לא הוגדר Client ID
   if (!configured) {
     return (
@@ -66,7 +90,7 @@ export function GmailConnect({
               <div className="flex items-center overflow-hidden rounded-lg bg-ink shadow-sm">
                 <span className="px-2.5 py-2 text-xs font-medium text-white/70">קבצים (ZIP)</span>
                 <button
-                  onClick={() => onExport('month')}
+                  onClick={() => setDialog({ kind: 'zip', groupBy: 'month' })}
                   disabled={exporting || loading || attachmentCount === 0}
                   title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : 'תיקייה לכל חודש'}
                   className="border-r border-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
@@ -74,7 +98,7 @@ export function GmailConnect({
                   {exporting ? 'מייצא…' : 'לפי חודש'}
                 </button>
                 <button
-                  onClick={() => onExport('year')}
+                  onClick={() => setDialog({ kind: 'zip', groupBy: 'year' })}
                   disabled={exporting || loading || attachmentCount === 0}
                   title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : 'תיקייה לכל שנה'}
                   className="px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
@@ -85,7 +109,7 @@ export function GmailConnect({
               <div className="flex items-center overflow-hidden rounded-lg border border-brand shadow-sm">
                 <span className="px-2.5 py-2 text-xs font-medium text-brand">דוח Excel</span>
                 <button
-                  onClick={() => onExportExcel('month')}
+                  onClick={() => setDialog({ kind: 'excel', groupBy: 'month' })}
                   disabled={loading}
                   title="דוח אקסל מרוכז לפי חודש"
                   className="border-r border-brand/30 px-3 py-2 text-sm font-semibold text-brand transition hover:bg-teal-50 disabled:opacity-50"
@@ -93,7 +117,7 @@ export function GmailConnect({
                   לפי חודש
                 </button>
                 <button
-                  onClick={() => onExportExcel('year')}
+                  onClick={() => setDialog({ kind: 'excel', groupBy: 'year' })}
                   disabled={loading}
                   title="דוח אקסל מרוכז לפי שנה"
                   className="px-3 py-2 text-sm font-semibold text-brand transition hover:bg-teal-50 disabled:opacity-50"
@@ -149,6 +173,15 @@ export function GmailConnect({
 
       {error && (
         <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+      )}
+
+      {dialog && (
+        <ExportDialog
+          title={dialog.groupBy === 'year' ? 'ייצוא — בחר שנה' : 'ייצוא — בחר חודש'}
+          options={dialogOptions}
+          onPick={pick}
+          onClose={() => setDialog(null)}
+        />
       )}
     </div>
   );
