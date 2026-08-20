@@ -11,6 +11,7 @@ interface Props {
   onRefresh: () => void;
   onDisconnect: () => void;
   onExport: (groupBy: 'month' | 'year') => void;
+  onExportExcel: (groupBy: 'month' | 'year') => void;
 }
 
 export function GmailConnect({
@@ -26,6 +27,7 @@ export function GmailConnect({
   onRefresh,
   onDisconnect,
   onExport,
+  onExportExcel,
 }: Props) {
   // עדיין לא הוגדר Client ID
   if (!configured) {
@@ -62,7 +64,7 @@ export function GmailConnect({
           {connected ? (
             <>
               <div className="flex items-center overflow-hidden rounded-lg bg-ink shadow-sm">
-                <span className="px-2.5 py-2 text-xs font-medium text-white/70">ייצוא לרו״ח</span>
+                <span className="px-2.5 py-2 text-xs font-medium text-white/70">קבצים (ZIP)</span>
                 <button
                   onClick={() => onExport('month')}
                   disabled={exporting || loading || attachmentCount === 0}
@@ -76,6 +78,25 @@ export function GmailConnect({
                   disabled={exporting || loading || attachmentCount === 0}
                   title={attachmentCount === 0 ? 'אין קבצים מצורפים לייצוא' : 'תיקייה לכל שנה'}
                   className="px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                >
+                  לפי שנה
+                </button>
+              </div>
+              <div className="flex items-center overflow-hidden rounded-lg border border-brand shadow-sm">
+                <span className="px-2.5 py-2 text-xs font-medium text-brand">דוח Excel</span>
+                <button
+                  onClick={() => onExportExcel('month')}
+                  disabled={loading}
+                  title="דוח אקסל מרוכז לפי חודש"
+                  className="border-r border-brand/30 px-3 py-2 text-sm font-semibold text-brand transition hover:bg-teal-50 disabled:opacity-50"
+                >
+                  לפי חודש
+                </button>
+                <button
+                  onClick={() => onExportExcel('year')}
+                  disabled={loading}
+                  title="דוח אקסל מרוכז לפי שנה"
+                  className="px-3 py-2 text-sm font-semibold text-brand transition hover:bg-teal-50 disabled:opacity-50"
                 >
                   לפי שנה
                 </button>

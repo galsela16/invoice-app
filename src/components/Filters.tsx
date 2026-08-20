@@ -1,5 +1,5 @@
 import type { Filters as FiltersState } from '../lib/selectors';
-import { STATUS_LABEL, SOURCE_LABEL, STATUS_ORDER, SOURCE_ORDER } from '../lib/labels';
+import { SOURCE_LABEL, SOURCE_ORDER } from '../lib/labels';
 import { monthLabel } from '../utils/format';
 
 interface Props {
@@ -33,7 +33,6 @@ export function Filters({ filters, months, onChange, onReset }: Props) {
   const hasActive =
     filters.search !== '' ||
     filters.month !== 'all' ||
-    filters.status !== 'all' ||
     filters.source !== 'all';
 
   return (
@@ -62,7 +61,7 @@ export function Filters({ filters, months, onChange, onReset }: Props) {
       </div>
 
       {/* סינונים */}
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="relative">
           <select
             aria-label="סינון לפי חודש"
@@ -74,23 +73,6 @@ export function Filters({ filters, months, onChange, onReset }: Props) {
             {months.map((m) => (
               <option key={m} value={m}>
                 {monthLabel(m)}
-              </option>
-            ))}
-          </select>
-          <Chevron />
-        </div>
-
-        <div className="relative">
-          <select
-            aria-label="סינון לפי סטטוס"
-            value={filters.status}
-            onChange={(e) => onChange({ ...filters, status: e.target.value as FiltersState['status'] })}
-            className={selectClass}
-          >
-            <option value="all">כל הסטטוסים</option>
-            {STATUS_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s]}
               </option>
             ))}
           </select>

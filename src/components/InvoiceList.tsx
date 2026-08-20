@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { Invoice } from '../types';
 import { formatCurrency, formatCurrencyCode, formatDate } from '../utils/format';
-import { StatusBadge } from './StatusBadge';
 import { SourceBadge } from './SourceBadge';
 import { InvoiceModal } from './InvoiceModal';
 
@@ -31,7 +30,7 @@ export function InvoiceList({ invoices, onHide }: Props) {
         <div className="col-span-2">תאריך</div>
         <div className="col-span-2">מקור</div>
         <div className="col-span-2 text-left">סכום</div>
-        <div className="col-span-1 text-left">סטטוס</div>
+        <div className="col-span-1" />
       </div>
 
       <ul className="divide-y divide-slate-100">
@@ -74,8 +73,7 @@ export function InvoiceList({ invoices, onHide }: Props) {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 sm:col-span-1 sm:justify-start sm:text-left">
-                <StatusBadge status={inv.status} />
+              <div className="sm:col-span-1 sm:flex sm:justify-start">
                 {onHide && (
                   <button
                     onClick={(e) => {

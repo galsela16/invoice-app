@@ -32,8 +32,5 @@ export interface Invoice {
 // ── Summary ───────────────────────────────────────────────────
 export interface MonthlySummary {
   total: number;
-  paid: number;
-  unpaid: number;
-  review: number;
   count: number;
 }

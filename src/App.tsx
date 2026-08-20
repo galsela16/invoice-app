@@ -13,6 +13,7 @@ import { monthLabel } from './utils/format';
 import * as gmail from './lib/gmail';
 import { exportInvoicesZip, countAttachments, type ExportProgress, type GroupBy } from './lib/exportZip';
 import { loadDismissed, saveDismissed } from './lib/dismissed';
+import { exportReportXlsx } from './lib/exportReport';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
 import { Filters } from './components/Filters';
@@ -44,15 +45,24 @@ export default function App() {
 
   async function handleExport(groupBy: GroupBy) {
     setExporting(true);
-    setExportProgress({ done: 0, total: countAttachments(gmailInvoices) });
+    setExportProgress({ done: 0, total: countAttachments(exportInvoices) });
     setGmailError(null);
     try {
-      await exportInvoicesZip(gmailInvoices, groupBy, (p) => setExportProgress(p));
+      await exportInvoicesZip(exportInvoices, groupBy, (p) => setExportProgress(p));
     } catch (err) {
       setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא.');
     } finally {
       setExporting(false);
       setExportProgress(null);
+    }
+  }
+
+  async function handleExportExcel(groupBy: GroupBy) {
+    setGmailError(null);
+    try {
+      await exportReportXlsx(exportInvoices, groupBy);
+    } catch (err) {
+      setGmailError(err instanceof Error ? err.message : 'שגיאה בייצוא הדוח.');
     }
   }
 
@@ -111,6 +121,11 @@ export default function App() {
     setGmailError(null);
   }
 
+  const exportInvoices = useMemo(
+    () => gmailInvoices.filter((i) => !dismissed.has(i.id)),
+    [gmailInvoices, dismissed]
+  );
+
   const allInvoices = useMemo(
     () => [...gmailInvoices, ...invoices].filter((i) => !dismissed.has(i.id)),
     [gmailInvoices, invoices, dismissed]
@@ -140,13 +155,14 @@ export default function App() {
               loading={gmailLoading}
               count={gmailConnected ? gmailInvoices.length : null}
               error={gmailError}
-              attachmentCount={countAttachments(gmailInvoices)}
+              attachmentCount={countAttachments(exportInvoices)}
               exporting={exporting}
               exportProgress={exportProgress}
               onConnect={handleConnect}
               onRefresh={loadFromGmail}
               onDisconnect={handleDisconnect}
               onExport={handleExport}
+              onExportExcel={handleExportExcel}
             />
             <Filters
               filters={filters}
