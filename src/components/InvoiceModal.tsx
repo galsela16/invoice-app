@@ -12,6 +12,8 @@ interface Props {
 // עם כפתור הורדה. סגירה: כפתור / לחיצה על הרקע / מקש Esc.
 export function InvoiceModal({ invoice, onClose }: Props) {
   const attachment = invoice.attachments?.[0];
+  const gmailId = invoice.id.startsWith('gmail-') ? invoice.id.slice(6) : null;
+  const gmailUrl = gmailId ? `https://mail.google.com/mail/u/0/#all/${gmailId}` : null;
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,30 +109,60 @@ export function InvoiceModal({ invoice, onClose }: Props) {
           </div>
         </div>
 
-        {/* גוף — הקובץ */}
+        {/* גוף — קובץ אם יש, אחרת פרטים + קישור ל-Gmail */}
         <div className="relative flex-1 bg-slate-50">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
-              טוען קובץ…
+          {!attachment ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+              <p className="text-sm text-slate-600">
+                לרשומה זו אין קובץ מצורף — הסכום זוהה מגוף המייל.
+              </p>
+              {gmailUrl && (
+                <a
+                  href={gmailUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
+                >
+                  פתח ב-Gmail
+                </a>
+              )}
             </div>
+          ) : (
+            <>
+              {loading && (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+                  טוען קובץ…
+                </div>
+              )}
+              {error && !loading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-rose-600">
+                  <span>{error}</span>
+                  {gmailUrl && (
+                    <a
+                      href={gmailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-teal-800"
+                    >
+                      פתח ב-Gmail
+                    </a>
+                  )}
+                </div>
+              )}
+              {url && !loading && !error &&
+                (isImage ? (
+                  <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
+                    <img
+                      src={url}
+                      alt={attachment.filename}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <iframe src={url} title={attachment.filename} className="h-full w-full" />
+                ))}
+            </>
           )}
-          {error && !loading && (
-            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-rose-600">
-              {error}
-            </div>
-          )}
-          {url && !loading && !error &&
-            (isImage ? (
-              <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
-                <img
-                  src={url}
-                  alt={attachment?.filename}
-                  className="max-h-full max-w-full object-contain"
-                />
-              </div>
-            ) : (
-              <iframe src={url} title={attachment?.filename} className="h-full w-full" />
-            ))}
         </div>
       </div>
     </div>

@@ -37,10 +37,8 @@ export function InvoiceList({ invoices, onHide }: Props) {
         {invoices.map((inv) => (
           <li
             key={inv.id}
-            onClick={inv.attachments?.length ? () => setOpen(inv) : undefined}
-            className={`px-5 py-4 transition hover:bg-slate-50/70 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4 ${
-              inv.attachments?.length ? 'cursor-pointer' : ''
-            }`}
+            onClick={() => setOpen(inv)}
+            className="cursor-pointer px-5 py-4 transition hover:bg-slate-50/70 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4"
           >
             {/* ספק + קטגוריה */}
             <div className="sm:col-span-5">
