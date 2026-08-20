@@ -75,3 +75,30 @@ function triggerDownload(blob: Blob, filename: string): void {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** מוריד את כל הקבצים המצורפים של ספק מסוים ל-ZIP אחד (שטוח). */
+export async function exportVendorZip(
+  invoices: Invoice[],
+  vendor: string,
+  onProgress?: (p: ExportProgress) => void
+): Promise<void> {
+  const withFiles = invoices.filter(
+    (inv) => inv.vendor === vendor && (inv.attachments?.length ?? 0) > 0
+  );
+  const total = countAttachments(withFiles);
+  if (total === 0) throw new Error(`אין קבצים מצורפים מ-${vendor}.`);
+
+  const zip = new JSZip();
+  let done = 0;
+  for (const inv of withFiles) {
+    const dateLabel = formatDate(inv.issuedAt).replace(/\//g, '-');
+    for (const att of inv.attachments!) {
+      const bytes = await downloadAttachment(att.messageId, att.attachmentId);
+      zip.file(`${dateLabel}_${sanitize(att.filename)}`, bytes);
+      done += 1;
+      onProgress?.({ done, total });
+    }
+  }
+  const blob = await zip.generateAsync({ type: 'blob' });
+  triggerDownload(blob, `קבצים_${sanitize(vendor)}_${new Date().toISOString().slice(0, 10)}.zip`);
+}

@@ -3,14 +3,18 @@ import type { Invoice } from '../types';
 import { formatCurrency, formatCurrencyCode, formatDate } from '../utils/format';
 import { SourceBadge } from './SourceBadge';
 import { InvoiceModal } from './InvoiceModal';
+import { ActionSheet } from './ActionSheet';
 
 interface Props {
   invoices: Invoice[];
   onHide?: (id: string) => void;
+  onHideVendor?: (vendor: string) => void;
+  onDownloadVendor?: (vendor: string) => void;
 }
 
-export function InvoiceList({ invoices, onHide }: Props) {
+export function InvoiceList({ invoices, onHide, onHideVendor, onDownloadVendor }: Props) {
   const [open, setOpen] = useState<Invoice | null>(null);
+  const [actionsFor, setActionsFor] = useState<Invoice | null>(null);
   if (invoices.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
@@ -76,14 +80,14 @@ export function InvoiceList({ invoices, onHide }: Props) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onHide(inv.id);
+                      setActionsFor(inv);
                     }}
-                    title="הסתר — לא חשבונית"
-                    aria-label="הסתר"
-                    className="shrink-0 rounded p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500"
+                    title="פעולות"
+                    aria-label="פעולות"
+                    className="shrink-0 rounded p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-600"
                   >
                     <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-                      <path d="M10 8.586 4.707 3.293 3.293 4.707 8.586 10l-5.293 5.293 1.414 1.414L10 11.414l5.293 5.293 1.414-1.414L11.414 10l5.293-5.293-1.414-1.414L10 8.586z" />
+                      <path d="M10 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm0 5.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm0 5.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" />
                     </svg>
                   </button>
                 )}
@@ -94,6 +98,37 @@ export function InvoiceList({ invoices, onHide }: Props) {
       </ul>
 
       {open && <InvoiceModal invoice={open} onClose={() => setOpen(null)} />}
+
+      {actionsFor && (
+        <ActionSheet
+          title={actionsFor.vendor}
+          onClose={() => setActionsFor(null)}
+          actions={[
+            {
+              label: 'הסתר רשומה זו',
+              onSelect: () => {
+                onHide?.(actionsFor.id);
+                setActionsFor(null);
+              },
+            },
+            {
+              label: `הסתר הכל מ-${actionsFor.vendor}`,
+              tone: 'danger',
+              onSelect: () => {
+                onHideVendor?.(actionsFor.vendor);
+                setActionsFor(null);
+              },
+            },
+            {
+              label: `הורד את כל הקבצים מ-${actionsFor.vendor}`,
+              onSelect: () => {
+                onDownloadVendor?.(actionsFor.vendor);
+                setActionsFor(null);
+              },
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

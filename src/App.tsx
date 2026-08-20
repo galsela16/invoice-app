@@ -12,8 +12,8 @@ import {
 } from './lib/selectors';
 import { monthNameByNum } from './utils/format';
 import * as gmail from './lib/gmail';
-import { exportInvoicesZip, countAttachments, type ExportProgress, type GroupBy } from './lib/exportZip';
-import { loadDismissed, saveDismissed } from './lib/dismissed';
+import { exportInvoicesZip, exportVendorZip, countAttachments, type ExportProgress, type GroupBy } from './lib/exportZip';
+import { loadDismissed, saveDismissed, loadDismissedVendors, saveDismissedVendors } from './lib/dismissed';
 import { exportReportXlsx } from './lib/exportReport';
 import { Header } from './components/Header';
 import { SummaryPanel } from './components/SummaryPanel';
@@ -27,6 +27,10 @@ export default function App() {
   const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
 
+  const [dismissedVendors, setDismissedVendors] = useState<Set<string>>(() =>
+    loadDismissedVendors()
+  );
+
   function hideInvoice(id: string) {
     setDismissed((prev) => {
       const next = new Set(prev);
@@ -34,6 +38,30 @@ export default function App() {
       saveDismissed(next);
       return next;
     });
+  }
+
+  function hideVendor(vendor: string) {
+    setDismissedVendors((prev) => {
+      const next = new Set(prev);
+      next.add(vendor);
+      saveDismissedVendors(next);
+      return next;
+    });
+  }
+
+  async function handleDownloadVendor(vendor: string) {
+    const list = gmailInvoices.filter((i) => i.vendor === vendor);
+    setExporting(true);
+    setExportProgress({ done: 0, total: countAttachments(list) });
+    setGmailError(null);
+    try {
+      await exportVendorZip(list, vendor, (p) => setExportProgress(p));
+    } catch (err) {
+      setGmailError(err instanceof Error ? err.message : 'שגיאה בהורדה.');
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
   }
 
   const [gmailInvoices, setGmailInvoices] = useState<Invoice[]>([]);
@@ -131,13 +159,16 @@ export default function App() {
   }
 
   const exportInvoices = useMemo(
-    () => gmailInvoices.filter((i) => !dismissed.has(i.id)),
-    [gmailInvoices, dismissed]
+    () => gmailInvoices.filter((i) => !dismissed.has(i.id) && !dismissedVendors.has(i.vendor)),
+    [gmailInvoices, dismissed, dismissedVendors]
   );
 
   const allInvoices = useMemo(
-    () => [...gmailInvoices, ...invoices].filter((i) => !dismissed.has(i.id)),
-    [gmailInvoices, invoices, dismissed]
+    () =>
+      [...gmailInvoices, ...invoices].filter(
+        (i) => !dismissed.has(i.id) && !dismissedVendors.has(i.vendor)
+      ),
+    [gmailInvoices, invoices, dismissed, dismissedVendors]
   );
 
   const years = useMemo(() => availableYears(allInvoices), [allInvoices]);
@@ -190,7 +221,12 @@ export default function App() {
               onChange={setFilters}
               onReset={() => setFilters(EMPTY_FILTERS)}
             />
-            <InvoiceList invoices={filtered} onHide={hideInvoice} />
+            <InvoiceList
+              invoices={filtered}
+              onHide={hideInvoice}
+              onHideVendor={hideVendor}
+              onDownloadVendor={handleDownloadVendor}
+            />
           </>
         )}
       </main>
